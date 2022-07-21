@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This CloudFormation template creates simple Lambda function that
+  can interact with KMS for decrypting a secret and then
+  inject it in SecretsManager with the same given key (the one
+  used to the decrypt the string at first).  
+
+Parameters:
+    SecretKMSEncrypted:
+      Type: String
+      Description: Encrypted secret with KMS
+    SecretName:
+      Type: String
+      Description: Name with which the Secret will be created in Secrets Manager
+    KMSKey:
+      Type: String
+      Description: Name of the KMS key witch which decrypt/encrypt will take place 
+    LambdaName:
+      Type: String
+      Description: Name of the Lambda to inyect KMS secrets into Secrets Manager
+      Default: SecretManagerInyector
+    LambdaHandler:
+      Type: String
+      Description: Name of the handler for the lambda
+      Default: secrets_manager_inyector.main
+    S3BucketName:
+      Type: String
+      Description: Name of the bucket where the code of the lambda will live on
+      Default: dummypoc
+    S3Key:
+      Type: String
+      Description: Key used for the deployment package
+
+Resources:           
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Description: Creating policies and roles for lambda function
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - sts:AssumeRole
+      Path: '/'
+      Policies:
+      - PolicyName: LambdaUseKMS
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - kms:DescribeKey
+            - kms:Decrypt
+            - kms:Encrypt
+            - kms:GenerateDataKey
+            - kms:ReEncryptFrom
+            - kms:ReEncryptTo
+            Resource: '*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+        - arn:aws:iam::aws:policy/service-role/AmazonS3ObjectLambdaExecutionRolePolicy
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Description: Creating Lambda function
+    Properties:
+      Runtime: python3.9
+      Timeout: 5
+      Handler: !Ref LambdaHandler
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: !Ref S3Key
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Environment:
+        Variables:
+          STR_KMS_ENCRYPTED:
+            Ref: SecretKMSEncrypted
+          SECRET_NAME:
+            Ref: SecretName
+          KMS_KEY_ALIAS:
+            Ref: KMSKey
